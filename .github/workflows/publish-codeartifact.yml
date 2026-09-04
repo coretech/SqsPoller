@@ -50,13 +50,16 @@ jobs:
             --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
             --repository ${{ env.CODEARTIFACT_REPO }}
 
+      # -p:GeneratePackageOnBuild=false: both csproj set GeneratePackageOnBuild=true,
+      # which wires packing into build. On SDK 10 `dotnet pack` then does not rebuild
+      # and fails with NU5026 (dll not found on disk); SDK 8 tolerated it.
       # Pack the two library projects explicitly. `dotnet pack` on the solution also
       # packs sample/SqsPoller.Sample.Publisher and sample/SqsPoller.Sample.Subscriber,
       # which are not products and would be pushed to the feed as 1.0.0.
       - name: Pack
         run: |
-          dotnet pack src/SqsPoller/SqsPoller.csproj -c Release -o ./artifacts
-          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj -c Release -o ./artifacts
+          dotnet pack src/SqsPoller/SqsPoller.csproj -c Release -o ./artifacts -p:GeneratePackageOnBuild=false
+          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj -c Release -o ./artifacts -p:GeneratePackageOnBuild=false
 
       # --skip-duplicate makes a re-run of the same tag a no-op instead of a
       # failure. CodeArtifact rejects overwriting an existing version.

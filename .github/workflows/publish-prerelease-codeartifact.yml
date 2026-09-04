@@ -53,15 +53,17 @@ jobs:
             --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
             --repository ${{ env.CODEARTIFACT_REPO }}
 
+      # -p:GeneratePackageOnBuild=false: see the release workflow; without it SDK 10
+      # fails with NU5026.
       # The csproj declares <Version>X.Y.Z$(VersionSuffix)</Version>, so the suffix
       # is concatenated directly and must carry its own leading dash.
       - name: Pack prerelease
         run: |
           SUFFIX="-prerelease-$(date +%Y%m%d%H%M%S)"
           dotnet pack src/SqsPoller/SqsPoller.csproj \
-            -c Release -o ./artifacts --version-suffix "$SUFFIX"
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false --version-suffix "$SUFFIX"
           dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj \
-            -c Release -o ./artifacts --version-suffix "$SUFFIX"
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false --version-suffix "$SUFFIX"
 
       - name: Push to CodeArtifact
         run: |
