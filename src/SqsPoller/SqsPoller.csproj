@@ -7,8 +7,8 @@
         <Authors>Alexey Bogdan</Authors>
         <Company>Alexey Bogdan</Company>
         <Description>A small library that helps ASP.NET Core applications easily consume messages from a SQS queue</Description>
-        <RepositoryUrl>https://github.com/AlexeyBogdan95/SqsPoller</RepositoryUrl>
-        <PackageProjectUrl>https://www.nuget.org/packages/SqsPoller/</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/coretech/SqsPoller</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/coretech/SqsPoller</PackageProjectUrl>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
