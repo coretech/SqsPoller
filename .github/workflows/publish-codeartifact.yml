@@ -1,0 +1,72 @@
+name: Publish NuGet package to CodeArtifact
+
+# Publishes on an annotated version tag, not on every push to master. The package
+# version comes from the csproj, so a push-triggered publish would fail on any
+# commit that does not bump it. Tagging is already how this repository is versioned.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [gha-runner-scale-set]
+    env:
+      DOTNET_INSTALL_DIR: "/home/runner/.dotnet"
+      DOTNET_ROOT: "/home/runner/.dotnet"
+      CODEARTIFACT_DOMAIN: "idt"
+      CODEARTIFACT_DOMAIN_OWNER: "416223954868"
+      CODEARTIFACT_REPO: "team_caf-nuget"
+      CODEARTIFACT_TOOL: "dotnet"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::101838717447:role/github-actions-role
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Log in to CodeArtifact
+        run: |
+          aws codeartifact login --tool ${{ env.CODEARTIFACT_TOOL }} \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository ${{ env.CODEARTIFACT_REPO }}
+
+      # Pack the two library projects explicitly. `dotnet pack` on the solution also
+      # packs sample/SqsPoller.Sample.Publisher and sample/SqsPoller.Sample.Subscriber,
+      # which are not products and would be pushed to the feed as 1.0.0.
+      - name: Pack
+        run: |
+          dotnet pack src/SqsPoller/SqsPoller.csproj -c Release -o ./artifacts
+          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj -c Release -o ./artifacts
+
+      # --skip-duplicate makes a re-run of the same tag a no-op instead of a
+      # failure. CodeArtifact rejects overwriting an existing version.
+      - name: Push to CodeArtifact
+        run: |
+          dotnet nuget push "./artifacts/*.nupkg" \
+            --source ${{ env.CODEARTIFACT_DOMAIN }}/${{ env.CODEARTIFACT_REPO }} \
+            --api-key unused \
+            --skip-duplicate
+
+      - name: Summary
+        run: |
+          echo "Pushed to ${CODEARTIFACT_DOMAIN}/${CODEARTIFACT_REPO}:" >> "$GITHUB_STEP_SUMMARY"
+          ls -1 ./artifacts/*.nupkg | sed 's#.*/#  - #' >> "$GITHUB_STEP_SUMMARY"
