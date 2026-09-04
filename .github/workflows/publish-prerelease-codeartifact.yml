@@ -65,6 +65,24 @@ jobs:
           dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj \
             -c Release -o ./artifacts -p:GeneratePackageOnBuild=false --version-suffix "$SUFFIX"
 
+      # TEMPORARY. `dotnet nuget push` reports only the status code, not the
+      # CodeArtifact error body. This prints the repository upstreams and the
+      # package origin configuration, which is the usual reason a push of a name
+      # that also exists on nuget.org is rejected with 400.
+      - name: Diagnose feed configuration
+        continue-on-error: true
+        run: |
+          echo "--- repository"
+          aws codeartifact describe-repository \
+            --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository "$CODEARTIFACT_REPO" || true
+          echo "--- package SqsPoller"
+          aws codeartifact describe-package \
+            --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository "$CODEARTIFACT_REPO" --format nuget --package SqsPoller || true
+          echo "--- caller identity"
+          aws sts get-caller-identity || true
+
       - name: Push to CodeArtifact
         run: |
           dotnet nuget push "./artifacts/*.nupkg" \
