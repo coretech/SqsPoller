@@ -22,10 +22,11 @@ concurrency:
 
 jobs:
   publish-prerelease:
-    runs-on: [gha-runner-scale-set]
+    # GitHub-hosted: the self-hosted `gha-runner-scale-set` label is not available
+    # to this repository, so jobs targeting it stay queued forever. OIDC works the
+    # same on hosted runners.
+    runs-on: ubuntu-latest
     env:
-      DOTNET_INSTALL_DIR: "/home/runner/.dotnet"
-      DOTNET_ROOT: "/home/runner/.dotnet"
       CODEARTIFACT_DOMAIN: "idt"
       CODEARTIFACT_DOMAIN_OWNER: "416223954868"
       CODEARTIFACT_REPO: "team_caf-nuget"
