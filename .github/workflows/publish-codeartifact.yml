@@ -50,16 +50,40 @@ jobs:
             --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
             --repository ${{ env.CODEARTIFACT_REPO }}
 
+      # The tag is the source of truth for the released version: `-p:Version` overrides
+      # the csproj, so v2.1.0 always produces 2.1.0. Without this the csproj decides,
+      # and tagging without bumping it republishes the old version, which
+      # --skip-duplicate then turns into a silently green no-op.
+      #
+      # workflow_dispatch runs from a branch, where GITHUB_REF_NAME is not a version;
+      # there the csproj value is used unchanged.
+      #
       # -p:GeneratePackageOnBuild=false: both csproj set GeneratePackageOnBuild=true,
       # which wires packing into build. On SDK 10 `dotnet pack` then does not rebuild
       # and fails with NU5026 (dll not found on disk); SDK 8 tolerated it.
-      # Pack the two library projects explicitly. `dotnet pack` on the solution also
-      # packs sample/SqsPoller.Sample.Publisher and sample/SqsPoller.Sample.Subscriber,
+      #
+      # The two library projects are packed explicitly. `dotnet pack` on the solution
+      # also packs sample/SqsPoller.Sample.Publisher and sample/SqsPoller.Sample.Subscriber,
       # which are not products and would be pushed to the feed as 1.0.0.
       - name: Pack
         run: |
-          dotnet pack src/SqsPoller/SqsPoller.csproj -c Release -o ./artifacts -p:GeneratePackageOnBuild=false
-          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj -c Release -o ./artifacts -p:GeneratePackageOnBuild=false
+          VERSION_ARG=""
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::Tag '$GITHUB_REF_NAME' does not yield a valid version ('$VERSION'). Expected vMAJOR.MINOR.PATCH[-suffix]."
+              exit 1
+            fi
+            VERSION_ARG="-p:Version=$VERSION"
+            echo "Releasing version $VERSION from tag $GITHUB_REF_NAME"
+          else
+            echo "Not a tag ref; using the version declared in the csproj."
+          fi
+
+          dotnet pack src/SqsPoller/SqsPoller.csproj \
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false $VERSION_ARG
+          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj \
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false $VERSION_ARG
 
       # --skip-duplicate makes a re-run of the same tag a no-op instead of a
       # failure. CodeArtifact rejects overwriting an existing version.
