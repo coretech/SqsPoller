@@ -1,0 +1,83 @@
+name: Publish NuGet prerelease to CodeArtifact
+
+# Publishes a prerelease build of each pull request so consumers can test a change
+# before it is tagged. Replaces the previous workflow that pushed prereleases to
+# public nuget.org.
+#
+# Pull requests opened from a fork do not receive `id-token: write`, so the OIDC
+# step cannot assume the AWS role there and this workflow will fail for them.
+# Branches in this repository are unaffected.
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-prerelease:
+    # GitHub-hosted: the self-hosted `gha-runner-scale-set` label is not available
+    # to this repository, so jobs targeting it stay queued forever. OIDC works the
+    # same on hosted runners.
+    runs-on: ubuntu-latest
+    env:
+      CODEARTIFACT_DOMAIN: "idt"
+      CODEARTIFACT_DOMAIN_OWNER: "416223954868"
+      CODEARTIFACT_REPO: "team_caf-nuget"
+      CODEARTIFACT_TOOL: "dotnet"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::101838717447:role/github-actions-role
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Log in to CodeArtifact
+        run: |
+          aws codeartifact login --tool ${{ env.CODEARTIFACT_TOOL }} \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository ${{ env.CODEARTIFACT_REPO }}
+
+      # -p:GeneratePackageOnBuild=false: see the release workflow; without it SDK 10
+      # fails with NU5026.
+      # The csproj declares <Version>X.Y.Z$(VersionSuffix)</Version>, so the suffix
+      # is concatenated directly and must carry its own leading dash.
+      - name: Pack prerelease
+        run: |
+          SUFFIX="-prerelease-$(date +%Y%m%d%H%M%S)"
+          dotnet pack src/SqsPoller/SqsPoller.csproj \
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false --version-suffix "$SUFFIX"
+          dotnet pack src/SqsPoller.Extensions.Publisher/SqsPoller.Extensions.Publisher.csproj \
+            -c Release -o ./artifacts -p:GeneratePackageOnBuild=false --version-suffix "$SUFFIX"
+
+      # Both package names are also reachable through the feed's public nuget.org
+      # external connection, so CodeArtifact defaults them to publish=BLOCK. Each
+      # needs publish=ALLOW,upstream=BLOCK set once via
+      # `aws codeartifact put-package-origin-configuration`; otherwise the push
+      # below returns a bare 400.
+      - name: Push to CodeArtifact
+        run: |
+          dotnet nuget push "./artifacts/*.nupkg" \
+            --source ${{ env.CODEARTIFACT_DOMAIN }}/${{ env.CODEARTIFACT_REPO }} \
+            --api-key unused \
+            --skip-duplicate
+
+      - name: Summary
+        run: |
+          echo "Prerelease pushed to ${CODEARTIFACT_DOMAIN}/${CODEARTIFACT_REPO}:" >> "$GITHUB_STEP_SUMMARY"
+          ls -1 ./artifacts/*.nupkg | sed 's#.*/#  - #' >> "$GITHUB_STEP_SUMMARY"

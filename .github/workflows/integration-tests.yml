@@ -16,7 +16,10 @@ jobs:
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: 6.0.100
-      - name: Run docker-compose
-        run: docker-compose up -d
+      # `docker-compose` (Compose v1) is no longer installed on GitHub-hosted
+      # runners; v2 is a docker subcommand. --wait blocks until the localstack
+      # healthcheck passes, instead of racing it from the test step.
+      - name: Run docker compose
+        run: docker compose up -d --wait
       - name: Run Integration Tests
         run: dotnet test ./test/SqsPoller.Extensions.Publisher.Tests.Integration/SqsPoller.Extensions.Publisher.Tests.Integration.csproj
