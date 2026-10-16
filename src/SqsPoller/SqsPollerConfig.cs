@@ -71,6 +71,33 @@ namespace SqsPoller
         public int MaxNumberOfParallelism { get; set; } = 100;
 
         /// <summary>
+        /// (Optional) Gets and sets the per-message processing budget (default null, no limit).
+        /// <para>
+        /// When set, the consumer receives a cancellation token that fires after this time. A
+        /// message whose consumer does not finish in time is NOT deleted, so SQS redelivers it
+        /// once its visibility timeout expires, and its concurrency slot is released.
+        /// </para>
+        /// <para>
+        /// Set it below the queue's visibility timeout. Otherwise SQS makes the message visible
+        /// again while the first attempt is still running, and a second consumer picks it up.
+        /// </para>
+        /// <para>
+        /// A consumer that ignores the token is stopped being awaited after this timeout plus
+        /// <see cref="MessageProcessingAbandonGracePeriod"/>. It keeps running in the
+        /// background, but no longer occupies a slot. Consumers must be idempotent: an abandoned
+        /// consumer can still finish its work after the message has been redelivered.
+        /// </para>
+        /// </summary>
+        public TimeSpan? MessageProcessingTimeout { get; set; }
+
+        /// <summary>
+        /// Gets and sets how long to wait, after <see cref="MessageProcessingTimeout"/> has fired,
+        /// for a consumer to honour its cancellation token before it is abandoned (default 5 seconds).
+        /// Only used when <see cref="MessageProcessingTimeout"/> is set.
+        /// </summary>
+        public TimeSpan MessageProcessingAbandonGracePeriod { get; set; } = TimeSpan.FromSeconds(5);
+
+        /// <summary>
         /// Gets and sets a log level for default log messages when an exception is caught
         /// </summary>
         public LogLevel ExceptionDefaultMessageLogLevel { get; set; } = LogLevel.Error;
@@ -80,6 +107,15 @@ namespace SqsPoller
         /// </summary>
         /// <returns>A callback with an exception and messageId</returns>
         public Action<Exception, string>? OnHandleMessageException { get; set; }
+
+        /// <summary>
+        /// (Optional) A callback invoked when a message exceeds <see cref="MessageProcessingTimeout"/>,
+        /// for example to count timeouts in a metric. The timeout is always logged at Error level as well.
+        /// It is not invoked when the host is shutting down.
+        /// </summary>
+        /// <returns>A callback with the messageId and whether the consumer was abandoned
+        /// (it ignored the cancellation token and was still running after the grace period)</returns>
+        public Action<string, bool>? OnHandleMessageTimeout { get; set; }
         
         /// <summary>
         /// (Optional) A custom exception handler that overrides DeleteMessage default exception handler.
